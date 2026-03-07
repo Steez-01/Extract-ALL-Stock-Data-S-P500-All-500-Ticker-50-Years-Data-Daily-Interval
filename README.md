@@ -8,4 +8,4 @@ Python
 from datetime import datetime
 end = datetime.today().strftime('%Y-%m-%d')
 
-To be implemented. The current code in main file works. thus till nod did not re-test this upgrade.
+To be implemented. The current code in main file works. thus till now did not test this upgrade "end = datetime.today().strftime('%Y-%m-%d')".
