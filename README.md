@@ -1,5 +1,6 @@
 # Extract-ALL-Stock-Data-S-P500-All-500-Ticker-50-Years-Data-Daily-Interval
 Extract ALL Stock Data S&amp;P500 All 500 Ticker 50 Years Data Daily Interval. Can be configured easily to do more than 50 year data on daily interval
+50 Years * 365 days * 500 Companies = 9125000 Excel Data Cells and yes due to not every company being 50 years old it will be >4,5 million cells total. -did not count yet - 
 
 
 the code to always be up-to-date without you manually changing the date, you can use:
