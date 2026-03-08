@@ -1,0 +1,51 @@
+^GDAXI: DAX Performance Index
+
+import pandas as pd
+import yfinance as yf
+import os
+
+# 1. Added .DE to tickers to point to the German XETRA exchange
+raw_tickers = ["SAP","SIE","ALV","DTE","ENR","RHM","MUV2","IFX","DBK","DB1","EOAN","DHL","BAS","MBG","BAYN","RWE","ADS","HEI","CBK","BMW","VNA","FRE","VOW3","DTG","MTX","HNR1","MRK","SHL","HEN3","SY1","G1A","FME","QIA","BEI","KBX","HEN","CON","TLX","HOT","SRT3","BNR","G24","PAH3","LEG","LHA","ZAL","HAG","BMW3","P911","EVD","NEM","EVK","RAA","DHER"]
+tickers = [t + ".DE" for t in raw_tickers]
+
+print("Phase 1: Ranking Tickers by Market Cap Weight...")
+
+cap_list = []
+
+# Fetching info for German tickers
+for t in tickers:
+    try:
+        ticker_obj = yf.Ticker(t)
+        # Some German stocks report marketCap in EUR; yfinance handles conversion generally
+        m_cap = ticker_obj.info.get('marketCap', 0)
+        cap_list.append({'Ticker': t, 'MarketCap': m_cap})
+        print(f"Fetched: {t}")
+    except Exception as e:
+        print(f"Could not fetch {t}: {e}")
+        cap_list.append({'Ticker': t, 'MarketCap': 0})
+
+# Sort list by MarketCap descending
+sorted_df = pd.DataFrame(cap_list).sort_values(by='MarketCap', ascending=False)
+ordered_tickers = sorted_df['Ticker'].tolist()
+
+print(f"\nSorting complete. Top stock: {ordered_tickers[0]}. Bottom: {ordered_tickers[-1]}.")
+
+# Phase 2: Download Daily Data
+start = "1976-01-01"
+end = "2026-02-21"
+
+print(f"\nPhase 2: Downloading data for {len(ordered_tickers)} tickers...")
+# Download data (this will now find the .DE symbols)
+data = yf.download(ordered_tickers, start=start, end=end, auto_adjust=True)["Close"]
+
+# Reindex and Transpose
+data = data[ordered_tickers]
+df_wide = data.transpose()
+df_wide.columns = df_wide.columns.strftime('%Y-%m-%d')
+
+# Save to CSV
+file_name = "MSCI_GERMANY_WEIGHTED_DAILY.csv"
+df_wide.to_csv(file_name)
+
+print("-" * 30)
+print(f"Success! File saved at: {os.getcwd()}/{file_name}")
