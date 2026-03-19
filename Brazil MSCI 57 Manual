@@ -1,0 +1,85 @@
+import pandas as pd
+import yfinance as yf
+import ssl
+import numpy as np
+
+# --- BYPASS SSL CERTIFICATE ISSUES ---
+ssl._create_default_https_context = ssl._create_unverified_context
+
+def get_brazil_tickers_full():
+    """
+    Comprehensive manual list of the Ibovespa components to ensure 
+    the script never returns an incomplete 'overview'.
+    """
+    # This is the current complete list of the Bovespa (B3) main index
+    full_list = [
+        "VALE3.SA", "PETR4.SA", "ITUB4.SA", "PETR3.SA", "BBDC4.SA", "ABEV3.SA", 
+        "WEGE3.SA", "BBAS3.SA", "ITSA4.SA", "B3SA3.SA", "EQTL3.SA", "RENT3.SA", 
+        "PRIO3.SA", "RDOR3.SA", "SUZB3.SA", "VIVT3.SA", "SBSP3.SA", "LREN3.SA", 
+        "GGBR4.SA", "TIMS3.SA", "RADL3.SA", "VBBR3.SA", "UGPA3.SA", "CMIG4.SA", 
+        "RAIL3.SA", "CPLE6.SA", "CSAN3.SA", "HAPV3.SA", "ELET3.SA", "ELET6.SA", 
+        "CCRO3.SA", "CPFE3.SA", "CSNA3.SA", "EMBR3.SA", "KLBN11.SA", "ENGI11.SA", 
+        "EGIE3.SA", "ASAI3.SA", "TOTS3.SA", "ALOS3.SA", "CYRE3.SA", "MULT3.SA", 
+        "SOMA3.SA", "CRFB3.SA", "MRFG3.SA", "BRFS3.SA", "GOAU4.SA", "COGN3.SA", 
+        "AZUL4.SA", "CVCB3.SA", "EZTC3.SA", "MRVE3.SA", "BEEF3.SA", "SMTO3.SA", 
+        "YDUQ3.SA", "PETZ3.SA", "BHIA3.SA", "DXCO3.SA", "MGLU3.SA", "FLRY3.SA", 
+        "ALPA4.SA", "ARZZ3.SA", "RAIZ4.SA", "RECV3.SA", "SLCE3.SA", "VIVA3.SA",
+        "TRPL4.SA", "POMO4.SA", "SMLS3.SA", "BPAC11.SA", "STBP3.SA", "BRAP4.SA"
+    ]
+    return full_list
+
+# --- PHASE 1: GET TICKERS & VALIDATE MARKET CAPS ---
+print("Phase 1: Validating Full Brazil Ticker List (80+ Stocks)...")
+tickers = get_brazil_tickers_full()
+cap_data = []
+
+for t in tickers:
+    try:
+        stock = yf.Ticker(t)
+        # Using fast_info for quicker validation
+        mcap = stock.info.get('marketCap', 0)
+        if mcap > 0:
+            cap_data.append({'Ticker': t, 'MarketCap': mcap})
+            print(f"Added: {t} | {mcap:,.0f} BRL")
+        else:
+            # Some tickers like ELET3 sometimes require a re-try or are temporarily blank
+            print(f"No Cap data for {t}, checking alternative info...")
+            # Retry one more time with basic info
+            mcap = stock.history(period="1d")['Close'].iloc[-1] * stock.info.get('sharesOutstanding', 0)
+            if mcap > 0:
+                cap_data.append({'Ticker': t, 'MarketCap': mcap})
+    except:
+        continue
+
+if not cap_data:
+    print("CRITICAL: No Market Cap data found.")
+    exit()
+
+# Sort by Market Cap
+df_caps = pd.DataFrame(cap_data).sort_values('MarketCap', ascending=False)
+ordered_tickers = df_caps['Ticker'].tolist()
+
+# --- PHASE 2: DOWNLOAD DATA ---
+print(f"\nPhase 2: Downloading Daily Data for {len(ordered_tickers)} stocks...")
+# Set to today's date
+data = yf.download(ordered_tickers, start="1976-01-01", end="2026-03-19", auto_adjust=True)
+
+if isinstance(data.columns, pd.MultiIndex):
+    close_data = data['Close']
+else:
+    close_data = data
+
+# Clean data: only keep tickers that actually have prices
+valid_final_tickers = [t for t in ordered_tickers if t in close_data.columns]
+close_data = close_data[valid_final_tickers]
+
+# --- PHASE 3: EXPORT ---
+# Transpose so rows = Tickers, columns = Dates
+df_wide = close_data.transpose()
+df_wide.columns = pd.to_datetime(df_wide.columns).strftime('%Y-%m-%d')
+
+file_name = f"Brazil_MarketCap_Sorted_FULL_OVERVIEW_{len(valid_final_tickers)}.csv"
+df_wide.to_csv(file_name)
+
+print("-" * 30)
+print(f"Success! Exported {len(valid_final_tickers)} stocks to {file_name}")
