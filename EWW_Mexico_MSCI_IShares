@@ -1,2 +1,87 @@
-EWW: iShares MSCI Mexico
--will be updated real soon-
+import pandas as pd
+import yfinance as yf
+import ssl
+import numpy as np
+
+# --- BYPASS SSL CERTIFICATE ISSUES ---
+ssl._create_default_https_context = ssl._create_unverified_context
+
+def get_mexico_tickers_full():
+    """
+    Manual list of the S&P/BMV IPC constituents. 
+    These make up the core of the MSCI Mexico 25/50 index.
+    """
+    full_list = [
+        "AMXB.MX", "WALMEX.MX", "FEMSAUBD.MX", "GFNORTEO.MX", "GMEXICOB.MX", 
+        "CEMEXCPO.MX", "BIMBOA.MX", "ASURB.MX", "GAPB.MX", "OMAB.MX", 
+        "GFINBURO.MX", "GRUMAB.MX", "AC.MX", "KOFUBL.MX", "KIMBERA.MX", 
+        "PINFRA.MX", "ORBIA.MX", "TLEVISACPO.MX", "MEGACPO.MX", "GCC.MX", 
+        "ALFAA.MX", "ALPEKA.MX", "VESTA.MX", "BOLSAA.MX", "RA.MX", "LABB.MX",
+        "GENTERA.MX", "PE&OLES.MX", "CUERVO.MX", "Q.MX", "CHDRAUIB.MX"
+    ]
+    return full_list
+
+# --- PHASE 1: GET TICKERS & VALIDATE MARKET CAPS ---
+print("Phase 1: Validating Mexico Ticker List (IPC Components)...")
+tickers = get_mexico_tickers_full()
+cap_data = []
+
+for t in tickers:
+    try:
+        stock = yf.Ticker(t)
+        # Fetching Market Cap in MXN
+        mcap = stock.info.get('marketCap', 0)
+        
+        if mcap > 0:
+            cap_data.append({'Ticker': t, 'MarketCap': mcap})
+            print(f"Added: {t} | {mcap:,.0f} MXN")
+        else:
+            # Fallback for tickers with missing info field
+            print(f"No direct Cap data for {t}, calculating manually...")
+            hist = stock.history(period="1d")
+            if not hist.empty:
+                shares = stock.info.get('sharesOutstanding', 0)
+                mcap = hist['Close'].iloc[-1] * shares
+                if mcap > 0:
+                    cap_data.append({'Ticker': t, 'MarketCap': mcap})
+                    print(f"Added (Manual Calc): {t}")
+    except Exception as e:
+        print(f"Skipping {t} due to error: {e}")
+        continue
+
+if not cap_data:
+    print("CRITICAL: No Market Cap data found. Check your internet connection.")
+    exit()
+
+# Sort by Market Cap (Highest to Lowest)
+df_caps = pd.DataFrame(cap_data).sort_values('MarketCap', ascending=False)
+ordered_tickers = df_caps['Ticker'].tolist()
+
+# --- PHASE 2: DOWNLOAD HISTORICAL DATA ---
+print(f"\nPhase 2: Downloading Daily Data for {len(ordered_tickers)} stocks...")
+# Start date set to your requested 1976 baseline
+start_date = "1976-01-01"
+end_date = "2026-03-19"
+
+data = yf.download(ordered_tickers, start=start_date, end=end_date, auto_adjust=True)
+
+# Handle MultiIndex and extract Close prices
+if isinstance(data.columns, pd.MultiIndex):
+    close_data = data['Close']
+else:
+    close_data = data
+
+# Filter only tickers that successfully returned data
+valid_final_tickers = [t for t in ordered_tickers if t in close_data.columns]
+close_data = close_data[valid_final_tickers]
+
+# --- PHASE 3: EXPORT ---
+# Transpose for your target format: Rows = Tickers, Columns = Dates
+df_wide = close_data.transpose()
+df_wide.columns = pd.to_datetime(df_wide.columns).strftime('%Y-%m-%d')
+
+file_name = f"Mexico_MSCI_2550_Sorted_{len(valid_final_tickers)}.csv"
+df_wide.to_csv(file_name)
+
+print("-" * 30)
+print(f"Success! Exported {len(valid_final_tickers)} Mexican stocks to {file_name}")
