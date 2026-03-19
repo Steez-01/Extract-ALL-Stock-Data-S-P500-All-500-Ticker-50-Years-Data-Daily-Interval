@@ -1,0 +1,95 @@
+import pandas as pd
+import yfinance as yf
+import numpy as np
+import os
+
+# --- STEP 1: MANUALLY DEFINE YOUR TICKERS ---
+# You can add or remove symbols here. 
+# Note: I've added code below to automatically append '.MC' if you forget it.
+manual_tickers = [
+    "SAN", "IBE", "BBVA", "ITX", "TEF", "REP", "CABK", "FER", "AMS", "SAB",
+    "GRF", "NTGY", "ACS", "REI", "MAP", "IDR", "COL", "ANA", "SLR", "SCYR",
+    "RED", "ENG", "MTS", "IAG", "LOG", "UNI", "MEL", "ACX"
+]
+
+def apply_25_50_capping(df_caps):
+    """
+    Applies MSCI 25/50 Rule:
+    1. No single stock > 22.5% (with buffer)
+    2. Sum of all stocks > 4.8% must be <= 45% (with buffer)
+    """
+    df = df_caps.copy()
+    total_mcap = df['MarketCap'].sum()
+    df['Weight'] = df['MarketCap'] / total_mcap
+    df = df.sort_values('Weight', ascending=False).reset_index(drop=True)
+
+    # Iterative capping process
+    for _ in range(50):
+        # Rule 1: Single stock cap
+        excess = 0
+        for i in range(len(df)):
+            if df.loc[i, 'Weight'] > 0.225:
+                excess += df.loc[i, 'Weight'] - 0.225
+                df.loc[i, 'Weight'] = 0.225
+        
+        if excess > 0:
+            uncapped_mask = df['Weight'] < 0.225
+            df.loc[uncapped_mask, 'Weight'] += excess * (df.loc[uncapped_mask, 'Weight'] / df.loc[uncapped_mask, 'Weight'].sum())
+
+        # Rule 2: Aggregate cap for large positions
+        large_mask = df['Weight'] > 0.048
+        sum_large = df.loc[large_mask, 'Weight'].sum()
+        
+        if sum_large > 0.45:
+            excess_large = sum_large - 0.45
+            df.loc[large_mask, 'Weight'] *= (0.45 / sum_large)
+            small_mask = ~large_mask
+            df.loc[small_mask, 'Weight'] += excess_large * (df.loc[small_mask, 'Weight'] / df.loc[small_mask, 'Weight'].sum())
+            
+    return df
+
+# --- EXECUTION ---
+
+# 1. Prepare Tickers (Clean and add .MC suffix)
+final_tickers = [t if t.endswith(".MC") else f"{t.strip()}.MC" for t in manual_tickers]
+
+print(f"Phase 1: Validating {len(final_tickers)} Tickers...")
+cap_data = []
+
+for t in final_tickers:
+    try:
+        stock = yf.Ticker(t)
+        mcap = stock.info.get('marketCap')
+        if mcap:
+            cap_data.append({'Ticker': t, 'MarketCap': mcap})
+            print(f"✓ {t}: {mcap/1e9:.2f}B EUR")
+    except Exception as e:
+        print(f"✕ Failed {t}: {e}")
+
+if not cap_data:
+    print("Error: No data retrieved. Check internet or ticker symbols.")
+else:
+    # 2. Apply Capping Logic
+    df_caps = pd.DataFrame(cap_data)
+    df_weighted = apply_25_50_capping(df_caps)
+    
+    print("\n--- WEIGHTING RESULTS ---")
+    print(df_weighted[['Ticker', 'Weight']].head(10))
+    
+    # 3. Download Prices
+    print(f"\nPhase 2: Downloading Daily Data...")
+    ticker_list = df_weighted['Ticker'].tolist()
+    data = yf.download(ticker_list, start="1976-01-01", end="2026-03-19", auto_adjust=True)
+
+    # 4. Final Formatting & Export
+    if not data.empty:
+        # Pull only 'Close' prices and transpose so Tickers are Rows
+        prices = data['Close'][ticker_list].transpose()
+        
+        # Save both files
+        prices.to_csv("MSCI_Spain_Manual_Prices.csv")
+        df_weighted.to_csv("MSCI_Spain_Manual_Weights.csv", index=False)
+        
+        print("-" * 30)
+        print(f"Success! Data saved to 'MSCI_Spain_Manual_Prices.csv'")
+        print(f"Weights saved to 'MSCI_Spain_Manual_Weights.csv'")
