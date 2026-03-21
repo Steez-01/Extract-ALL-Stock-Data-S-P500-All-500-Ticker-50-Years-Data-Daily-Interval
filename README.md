@@ -1,4 +1,4 @@
-# Extract-ALL-Stock-Data-SP500 ; Stoxx600 ; CHINA400 ; NASDAC100; Daxx40 ; FTSE100 ; Japan 180 ; Brazil MSCI 25/50 ; South Korea 80 ; Taiwan80 ;  Italy 40 ; France 40 ; Mexico 25/50 ; Portugal 20 ;  -All >1500 Tickers 50 Years Data Daily Interval
+# Extract-ALL-Stock-Data-SP500 ; Stoxx600 ; CHINA400 ; NASDAC100; Daxx40 ; FTSE100 ; Japan 180 ; Brazil MSCI 25/50 ; South Korea 80 ; Taiwan80 ;  Italy 40 ; France 40 ; Mexico 25/50 ; Portugal 20 ;  All >1500 Tickers 50 Years Data Daily Interval
 
 S&P500 USA ; Stoxx600 ; CHINA400 ; NASDAC100; Dax40 Germany ; FTSE100 ; Japan 180 ;  MSCI Spain 57; Brazil MSCI 25/50 ; South Korea 80 ; Taiwan80 ; Italy 40 ; France 40 ; Mexico 25/50 ; Portugal 20 has been completed the procedure, all other ETF's have now been started as project. 
 
