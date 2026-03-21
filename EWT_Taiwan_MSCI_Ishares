@@ -110,3 +110,6 @@ df_wide.to_csv(file_name)
 
 print("-" * 30)
 print(f"Done! Exported {len(valid_tickers)} stocks to {file_name}")
+
+
+#The two that failed (5274.TW - ASPEED and 4966.TW - Parade Technologies) are common "gotchas" in Taiwan data. Both are primarily listed on the Taipei Exchange (TPEx) rather than the main Taiwan Stock Exchange. On Yahoo Finance, they often require the .TWO suffix instead of .TW. If you ever need those specific semiconductor mid-caps for completeness, just swapping the suffix usually does the trick.
