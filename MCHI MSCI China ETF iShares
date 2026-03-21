@@ -1,0 +1,110 @@
+
+import pandas as pd
+import yfinance as yf
+import ssl
+import io
+import urllib.request
+
+# --- BYPASS SSL CERTIFICATE ISSUES ---
+ssl._create_default_https_context = ssl._create_unverified_context
+
+def get_china_mchi_tickers():
+    """
+    Fetches the detailed holdings CSV directly from iShares MCHI page.
+    Maps tickers to their Yahoo Finance equivalents (.HK, .SS, .SZ, or US).
+    """
+    # The direct CSV download link for MCHI holdings
+    csv_url = "https://www.ishares.com/us/products/239619/ishares-msci-china-etf/1467271812596.ajax?fileType=csv&fileName=MCHI_holdings&dataType=fund"
+    
+    headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'}
+    req = urllib.request.Request(csv_url, headers=headers)
+    
+    ticker_list = []
+    
+    try:
+        with urllib.request.urlopen(req) as response:
+            content = response.read().decode('utf-8')
+            # iShares CSVs often have metadata in the first 9 rows
+            df = pd.read_csv(io.StringIO(content), skiprows=9)
+            
+            if 'Ticker' in df.columns and 'Exchange' in df.columns:
+                for index, row in df.iterrows():
+                    ticker = str(row['Ticker']).strip()
+                    exchange = str(row['Exchange']).strip()
+                    
+                    # Mapping logic for Yahoo Finance
+                    if exchange == "Hong Kong Stock Exchange":
+                        # Ensure 4-digit numeric for HK (e.g., 700 -> 0700.HK)
+                        clean_t = ticker.zfill(4) + ".HK"
+                    elif exchange == "Shanghai Stock Exchange":
+                        clean_t = ticker + ".SS"
+                    elif exchange == "Shenzhen Stock Exchange":
+                        clean_t = ticker + ".SZ"
+                    elif exchange in ["NASDAQ", "New York Stock Exchange Inc."]:
+                        clean_t = ticker # US ADRs have no suffix
+                    else:
+                        continue
+                    
+                    ticker_list.append(clean_t)
+                    
+    except Exception as e:
+        print(f"Automated fetch failed: {e}. Falling back to manual heavyweights...")
+        # Manual fallback for the top 15 most important names
+        ticker_list = [
+            "0700.HK", "BABA", "0939.HK", "1810.HK", "PDD", "1398.HK", 
+            "2318.HK", "3690.HK", "1211.HK", "3988.HK", "NTES", "BIDU", 
+            "2628.HK", "JD", "600519.SS"
+        ]
+
+    return list(set(ticker_list))
+
+# --- PHASE 1: GET TICKERS & VALIDATE ---
+tickers = get_china_mchi_tickers()
+print(f"Phase 1: Validating {len(tickers)} China Tickers...")
+
+cap_list = []
+for t in tickers:
+    try:
+        # Note: China A-Shares (SS/SZ) can be slow to respond to bulk info requests
+        stock = yf.Ticker(t)
+        info = stock.info
+        m_cap = info.get('marketCap', 0)
+        currency = info.get('currency', 'HKD') # Default to HKD/USD/CNY
+        
+        if m_cap > 0:
+            cap_list.append({'Ticker': t, 'MarketCap': m_cap, 'Currency': currency})
+            print(f"Success: {t} | Cap: {m_cap:,} {currency}")
+    except Exception:
+        pass # Skip failed fetches quietly to keep console clean
+
+# Sort by Market Cap
+sorted_df = pd.DataFrame(cap_list)
+if not sorted_df.empty:
+    sorted_df = sorted_df.sort_values(by='MarketCap', ascending=False)
+    ordered_tickers = sorted_df['Ticker'].tolist()
+else:
+    print("No valid data found.")
+    exit()
+
+# --- PHASE 2: DOWNLOAD HISTORICAL DATA ---
+# China data availability on Yahoo varies: HK is good back to the 90s, A-Shares vary.
+print(f"\nPhase 2: Downloading Daily Data for {len(ordered_tickers)} stocks...")
+start = "1976-01-01"
+end = "2026-03-21"
+
+data = yf.download(ordered_tickers, start=start, end=end, auto_adjust=True)
+
+if isinstance(data.columns, pd.MultiIndex):
+    close_data = data['Close']
+else:
+    close_data = data
+
+# --- PHASE 3: EXPORT ---
+df_wide = close_data.transpose()
+df_wide.columns = pd.to_datetime(df_wide.columns).strftime('%Y-%m-%d')
+
+file_name = f"China_MCHI_Sorted_{len(ordered_tickers)}.csv"
+df_wide.to_csv(file_name)
+
+print("-" * 30)
+print(f"Done! Exported {len(ordered_tickers)} stocks to {file_name}")
