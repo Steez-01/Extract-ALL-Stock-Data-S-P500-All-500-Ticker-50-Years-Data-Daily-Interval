@@ -1,2 +1,85 @@
-EWY: iShares MSCI Korea
--Will be updated real soon-
+import pandas as pd
+import yfinance as yf
+import ssl
+import urllib.request
+
+# --- BYPASS SSL CERTIFICATE ISSUES ---
+ssl._create_default_https_context = ssl._create_unverified_context
+
+def get_south_korea_tickers():
+    """
+    Manual list of the MSCI South Korea Index constituents (~87 stocks).
+    Using .KS suffix for KOSPI (Main Board).
+    """
+    # This list covers the major heavyweights and mid-caps in the index
+    tickers_str = (
+        "005930.KS, 000660.KS, 373220.KS, 207940.KS, 005380.KS, 068270.KS, 005490.KS, 051910.KS, "
+        "105560.KS, 000270.KS, 035420.KS, 006400.KS, 035720.KS, 003550.KS, 012330.KS, 032830.KS, "
+        "055550.KS, 066570.KS, 096770.KS, 000810.KS, 033780.KS, 086790.KS, 009150.KS, 010140.KS, "
+        "017670.KS, 015760.KS, 003670.KS, 329180.KS, 018260.KS, 316140.KS, 011780.KS, 024110.KS, "
+        "034730.KS, 009540.KS, 010950.KS, 259960.KS, 086280.KS, 034220.KS, 011170.KS, 004020.KS, "
+        "005940.KS, 000100.KS, 028260.KS, 047050.KS, 001040.KS, 036570.KS, 009830.KS, 051900.KS, "
+        "023530.KS, 030200.KS, 011200.KS, 005830.KS, 161390.KS, 267260.KS, 000720.KS, 090430.KS, "
+        "006800.KS, 047810.KS, 010130.KS, 012450.KS, 302440.KS, 003490.KS, 138040.KS, 010120.KS, "
+        "028300.KS, 196170.KS, 323410.KS, 271560.KS, 064350.KS, 032640.KS, 402340.KS, 034020.KS, "
+        "003230.KS, 326030.KS, 180640.KS, 443060.KS, 005935.KS, 005385.KS, 0126Z0.KS, 008770.KS, "
+        "042660.KS, 000670.KS, 047040.KS, 000080.KS, 000150.KS, 001450.KS, 004370.KS"
+    )
+    
+    return [t.strip() for t in tickers_str.split(",")]
+
+# --- PHASE 1: GET TICKERS & VALIDATE MARKET CAPS ---
+tickers = get_south_korea_tickers()
+
+print(f"Phase 1: Validating {len(tickers)} South Korea Tickers and fetching Market Caps...")
+
+cap_list = []
+for t in tickers:
+    try:
+        stock = yf.Ticker(t)
+        # KRW is the currency for South Korean stocks
+        m_cap = stock.info.get('marketCap', 0)
+        currency = stock.info.get('currency', 'KRW')
+        
+        if m_cap > 0:
+            cap_list.append({'Ticker': t, 'MarketCap': m_cap, 'Currency': currency})
+            print(f"Success: {t} | Cap: {m_cap:,} {currency}")
+        else:
+            print(f"Verified (No Cap): {t}")
+    except Exception:
+        print(f"FAILED fetch for: {t}")
+
+# Sort by Market Cap
+sorted_df = pd.DataFrame(cap_list)
+if not sorted_df.empty:
+    sorted_df = sorted_df.sort_values(by='MarketCap', ascending=False)
+    ordered_tickers = sorted_df[sorted_df['MarketCap'] > 0]['Ticker'].tolist()
+else:
+    print("No valid data found.")
+    exit()
+
+# --- PHASE 2: DOWNLOAD HISTORICAL DATA ---
+print(f"\nPhase 2: Downloading Daily Data for {len(ordered_tickers)} stocks...")
+start = "1976-01-01"
+end = "2026-03-21" 
+
+data = yf.download(ordered_tickers, start=start, end=end, auto_adjust=True)
+
+# Format for export (identical to your Taiwan/Portugal logic)
+if isinstance(data.columns, pd.MultiIndex):
+    close_data = data['Close']
+else:
+    close_data = data
+
+valid_tickers = [t for t in ordered_tickers if t in close_data.columns]
+close_data = close_data[valid_tickers]
+
+# --- PHASE 3: EXPORT ---
+df_wide = close_data.transpose()
+df_wide.columns = pd.to_datetime(df_wide.columns).strftime('%Y-%m-%d')
+
+file_name = f"SouthKorea_MSCI_MarketCap_Sorted_{len(valid_tickers)}.csv"
+df_wide.to_csv(file_name)
+
+print("-" * 30)
+print(f"Done! Exported {len(valid_tickers)} stocks to {file_name}")
